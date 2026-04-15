@@ -10,3 +10,7 @@
 ## Week 03 (April 07, 2026)
 - Milestone: Setup monorepo structure, Spring Boot 3 parent configuration, and Docker baseline
 - Status: Completed
+
+## Week 04 (April 15, 2026)
+- Milestone: ADR-001 documentation: selection of hybrid sliding-window circuit breaker
+- Status: Completed
