@@ -14,3 +14,7 @@
 ## Week 04 (April 15, 2026)
 - Milestone: ADR-001 documentation: selection of hybrid sliding-window circuit breaker
 - Status: Completed
+
+## Week 05 (April 23, 2026)
+- Milestone: ADR-002: dynamic multi-rail routing algorithm and priority score formulation
+- Status: Completed
