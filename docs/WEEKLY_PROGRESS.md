@@ -18,3 +18,7 @@
 ## Week 05 (April 23, 2026)
 - Milestone: ADR-002: dynamic multi-rail routing algorithm and priority score formulation
 - Status: Completed
+
+## Week 06 (April 28, 2026)
+- Milestone: Domain modeling: Money value object with precision and currency safety
+- Status: Completed
