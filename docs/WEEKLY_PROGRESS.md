@@ -22,3 +22,7 @@
 ## Week 06 (April 28, 2026)
 - Milestone: Domain modeling: Money value object with precision and currency safety
 - Status: Completed
+
+## Week 07 (May 06, 2026)
+- Milestone: Domain modeling: PaymentMethod and BankRail specifications
+- Status: Completed
