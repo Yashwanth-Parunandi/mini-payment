@@ -26,3 +26,7 @@
 ## Week 07 (May 06, 2026)
 - Milestone: Domain modeling: PaymentMethod and BankRail specifications
 - Status: Completed
+
+## Week 08 (May 14, 2026)
+- Milestone: Domain modeling: PaymentOrder and LedgerAccount entities
+- Status: Completed
