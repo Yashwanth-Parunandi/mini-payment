@@ -30,3 +30,7 @@
 ## Week 08 (May 14, 2026)
 - Milestone: Domain modeling: PaymentOrder and LedgerAccount entities
 - Status: Completed
+
+## Week 09 (May 19, 2026)
+- Milestone: Persistence setup: PostgreSQL schema migrations and initial account seeding
+- Status: Completed
