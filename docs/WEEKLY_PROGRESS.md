@@ -34,3 +34,7 @@
 ## Week 09 (May 19, 2026)
 - Milestone: Persistence setup: PostgreSQL schema migrations and initial account seeding
 - Status: Completed
+
+## Week 10 (May 27, 2026)
+- Milestone: Redis cluster configuration for distributed sliding-window counter storage
+- Status: Completed
