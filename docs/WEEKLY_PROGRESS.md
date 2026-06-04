@@ -38,3 +38,7 @@
 ## Week 10 (May 27, 2026)
 - Milestone: Redis cluster configuration for distributed sliding-window counter storage
 - Status: Completed
+
+## Week 11 (June 04, 2026)
+- Milestone: HDFC SmartGateway adapter implementation with latency simulation and jitter
+- Status: Completed
