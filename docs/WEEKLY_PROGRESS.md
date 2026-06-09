@@ -42,3 +42,7 @@
 ## Week 11 (June 04, 2026)
 - Milestone: HDFC SmartGateway adapter implementation with latency simulation and jitter
 - Status: Completed
+
+## Week 12 (June 09, 2026)
+- Milestone: ICICI Corporate Rail adapter implementation and baseline latency modeling
+- Status: Completed
