@@ -46,3 +46,7 @@
 ## Week 12 (June 09, 2026)
 - Milestone: ICICI Corporate Rail adapter implementation and baseline latency modeling
 - Status: Completed
+
+## Week 13 (June 17, 2026)
+- Milestone: SBI National Core Rail adapter implementation and timeout configurations
+- Status: Completed
