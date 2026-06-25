@@ -50,3 +50,7 @@
 ## Week 13 (June 17, 2026)
 - Milestone: SBI National Core Rail adapter implementation and timeout configurations
 - Status: Completed
+
+## Week 14 (June 25, 2026)
+- Milestone: Axis Instant UPI Rail adapter implementation and high-throughput tuning
+- Status: Completed
