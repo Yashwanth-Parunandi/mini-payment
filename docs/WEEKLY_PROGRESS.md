@@ -54,3 +54,7 @@
 ## Week 14 (June 25, 2026)
 - Milestone: Axis Instant UPI Rail adapter implementation and high-throughput tuning
 - Status: Completed
+
+## Week 15 (June 30, 2026)
+- Milestone: Bank rail registry and dynamic adapter lookup SPI
+- Status: Completed
