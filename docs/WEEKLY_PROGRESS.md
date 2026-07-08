@@ -58,3 +58,7 @@
 ## Week 15 (June 30, 2026)
 - Milestone: Bank rail registry and dynamic adapter lookup SPI
 - Status: Completed
+
+## Week 16 (July 08, 2026)
+- Milestone: Resilience4j integration: circuit breaker state machine configuration
+- Status: Completed
