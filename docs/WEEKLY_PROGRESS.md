@@ -62,3 +62,7 @@
 ## Week 16 (July 08, 2026)
 - Milestone: Resilience4j integration: circuit breaker state machine configuration
 - Status: Completed
+
+## Week 17 (July 16, 2026)
+- Milestone: Sliding-window failure rate tracking engine (50-sample window)
+- Status: Completed
