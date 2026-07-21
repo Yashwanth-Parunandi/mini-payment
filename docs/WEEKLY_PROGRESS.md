@@ -66,3 +66,7 @@
 ## Week 17 (July 16, 2026)
 - Milestone: Sliding-window failure rate tracking engine (50-sample window)
 - Status: Completed
+
+## Week 18 (July 21, 2026)
+- Milestone: Circuit breaker state transition listeners and event broadcasting
+- Status: Completed
