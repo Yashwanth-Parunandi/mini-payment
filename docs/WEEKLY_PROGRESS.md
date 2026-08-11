@@ -78,3 +78,7 @@
 ## Week 20 (August 06, 2026)
 - Milestone: Smart routing engine: half-open canary traffic distribution and emergency failover
 - Status: Completed
+
+## Week 21 (August 11, 2026)
+- Milestone: Double-entry ledger accounting: transaction journal postings
+- Status: Completed
