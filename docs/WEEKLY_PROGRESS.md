@@ -82,3 +82,7 @@
 ## Week 21 (August 11, 2026)
 - Milestone: Double-entry ledger accounting: transaction journal postings
 - Status: Completed
+
+## Week 22 (August 19, 2026)
+- Milestone: Payment checkout REST API and idempotency key interceptor
+- Status: Completed
