@@ -94,3 +94,7 @@
 ## Week 24 (September 01, 2026)
 - Milestone: Chaos simulator API endpoints for external test harness control
 - Status: Completed
+
+## Week 25 (September 09, 2026)
+- Milestone: Real-time Server-Sent Events (SSE) metrics broadcaster for live monitoring
+- Status: Completed
