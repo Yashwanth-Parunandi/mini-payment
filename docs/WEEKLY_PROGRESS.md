@@ -114,3 +114,7 @@
 ## Week 29 (October 08, 2026)
 - Milestone: Real-time payment dispatch trigger and transaction feed table
 - Status: Completed
+
+## Week 30 (October 13, 2026)
+- Milestone: Unit tests: Money value object and currency arithmetic invariants
+- Status: Completed
