@@ -118,3 +118,7 @@
 ## Week 30 (October 13, 2026)
 - Milestone: Unit tests: Money value object and currency arithmetic invariants
 - Status: Completed
+
+## Week 31 (October 21, 2026)
+- Milestone: Unit tests: sliding-window rate tracking and P90 latency calculation
+- Status: Completed
