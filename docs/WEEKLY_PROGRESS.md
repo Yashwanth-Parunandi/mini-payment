@@ -122,3 +122,7 @@
 ## Week 31 (October 21, 2026)
 - Milestone: Unit tests: sliding-window rate tracking and P90 latency calculation
 - Status: Completed
+
+## Week 32 (October 29, 2026)
+- Milestone: Integration tests: automatic failover when primary rail circuit trips OPEN
+- Status: Completed
