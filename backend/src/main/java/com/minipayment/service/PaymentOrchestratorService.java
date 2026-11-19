@@ -76,14 +76,40 @@ public class PaymentOrchestratorService {
         // Record metrics in sliding window tracker
         slidingWindowTracker.recordCall(targetRail, railResult.isSuccess(), totalLatency);
 
+        // IN-FLIGHT AUTO-FAILOVER: If primary attempt failed, immediately retry on secondary healthy rail
+        if (!railResult.isSuccess()) {
+            BankRail fallbackRail = (targetRail == BankRail.AXIS_UPI_RAIL) ? BankRail.ICICI_RAIL : BankRail.AXIS_UPI_RAIL;
+            log.warn("Auto-failover engaged: Rail {} failed, attempting immediate in-flight reroute to {}", targetRail, fallbackRail);
+            
+            BankRailAdapter fallbackAdapter = railRegistry.getAdapter(fallbackRail);
+            CircuitBreaker fallbackCb = circuitBreakerBridge.getCircuitBreaker(fallbackRail);
+            persistedOrder.setRoutedRail(fallbackRail);
+            persistedOrder.incrementAttemptCount();
+
+            long fallbackStart = System.currentTimeMillis();
+            try {
+                if (fallbackCb != null) {
+                    railResult = fallbackCb.executeSupplier(() -> fallbackAdapter.processPayment(persistedOrder));
+                } else {
+                    railResult = fallbackAdapter.processPayment(persistedOrder);
+                }
+            } catch (Exception ex) {
+                railResult = RailTransactionResult.failure(fallbackRail, System.currentTimeMillis() - fallbackStart, "FALLBACK_TIMEOUT", ex.getMessage());
+            }
+
+            long fallbackLatency = System.currentTimeMillis() - fallbackStart;
+            slidingWindowTracker.recordCall(fallbackRail, railResult.isSuccess(), fallbackLatency);
+            persistedOrder.setLatencyMs(totalLatency + fallbackLatency);
+        }
+
         if (railResult.isSuccess()) {
             persistedOrder.setStatus(PaymentStatus.SUCCESS);
             ledgerService.recordSuccessfulPayment(persistedOrder);
-            log.info("Payment {} SUCCEEDED on rail {} in {}ms", persistedOrder.getId(), targetRail, totalLatency);
+            log.info("Payment {} SUCCEEDED on rail {} in {}ms", persistedOrder.getId(), persistedOrder.getRoutedRail(), persistedOrder.getLatencyMs());
         } else {
             persistedOrder.setStatus(PaymentStatus.FAILED);
             persistedOrder.setErrorReason(railResult.getErrorMessage());
-            log.warn("Payment {} FAILED on rail {}: {}", persistedOrder.getId(), targetRail, railResult.getErrorMessage());
+            log.warn("Payment {} FAILED on rail {}: {}", persistedOrder.getId(), persistedOrder.getRoutedRail(), railResult.getErrorMessage());
         }
 
         return orderRepository.save(persistedOrder);
