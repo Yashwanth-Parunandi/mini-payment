@@ -1,0 +1,73 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: minipayment-gateway-orchestrator
+  datasource:
+    url: jdbc:h2:mem:minipayment;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: 
+  jpa:
+    database-platform: org.hibernate.dialect.H2Dialect
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+  data:
+    redis:
+      host: localhost
+      port: 6379
+
+resilience4j:
+  circuitbreaker:
+    instances:
+      hdfc-rail:
+        slidingWindowType: COUNT_BASED
+        slidingWindowSize: 50
+        minimumNumberOfCalls: 10
+        failureRateThreshold: 20.0
+        slowCallRateThreshold: 40.0
+        slowCallDurationThreshold: 2000ms
+        waitDurationInOpenState: 15s
+        permittedNumberOfCallsInHalfOpenState: 5
+        automaticTransitionFromOpenToHalfOpenEnabled: true
+      icici-rail:
+        slidingWindowType: COUNT_BASED
+        slidingWindowSize: 50
+        minimumNumberOfCalls: 10
+        failureRateThreshold: 20.0
+        slowCallRateThreshold: 40.0
+        slowCallDurationThreshold: 2000ms
+        waitDurationInOpenState: 15s
+        permittedNumberOfCallsInHalfOpenState: 5
+        automaticTransitionFromOpenToHalfOpenEnabled: true
+      sbi-rail:
+        slidingWindowType: COUNT_BASED
+        slidingWindowSize: 50
+        minimumNumberOfCalls: 10
+        failureRateThreshold: 20.0
+        slowCallRateThreshold: 40.0
+        slowCallDurationThreshold: 2000ms
+        waitDurationInOpenState: 15s
+        permittedNumberOfCallsInHalfOpenState: 5
+        automaticTransitionFromOpenToHalfOpenEnabled: true
+      axis-rail:
+        slidingWindowType: COUNT_BASED
+        slidingWindowSize: 50
+        minimumNumberOfCalls: 10
+        failureRateThreshold: 20.0
+        slowCallRateThreshold: 40.0
+        slowCallDurationThreshold: 2000ms
+        waitDurationInOpenState: 15s
+        permittedNumberOfCallsInHalfOpenState: 5
+        automaticTransitionFromOpenToHalfOpenEnabled: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,circuitbreakers,circuitbreakerevents
+  endpoint:
+    health:
+      show-details: always
