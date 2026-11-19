@@ -45,23 +45,25 @@ public class PaymentOrchestratorService {
     @Transactional
     public PaymentOrder processPayment(PaymentOrder order) {
         order.setStatus(PaymentStatus.ROUTING);
-        RouteEvaluationResult routeDecision = router.selectOptimalRail(order);
+        PaymentOrder persistedOrder = orderRepository.save(order);
+
+        RouteEvaluationResult routeDecision = router.selectOptimalRail(persistedOrder);
         BankRail targetRail = routeDecision.getSelectedRail();
-        order.setRoutedRail(targetRail);
-        order.incrementAttemptCount();
+        persistedOrder.setRoutedRail(targetRail);
+        persistedOrder.incrementAttemptCount();
 
         BankRailAdapter adapter = railRegistry.getAdapter(targetRail);
         CircuitBreaker cb = circuitBreakerBridge.getCircuitBreaker(targetRail);
 
-        order.setStatus(PaymentStatus.SUBMITTED_TO_PSP);
+        persistedOrder.setStatus(PaymentStatus.SUBMITTED_TO_PSP);
         long start = System.currentTimeMillis();
 
         RailTransactionResult railResult;
         try {
             if (cb != null) {
-                railResult = cb.executeSupplier(() -> adapter.processPayment(order));
+                railResult = cb.executeSupplier(() -> adapter.processPayment(persistedOrder));
             } else {
-                railResult = adapter.processPayment(order);
+                railResult = adapter.processPayment(persistedOrder);
             }
         } catch (Exception ex) {
             log.error("Circuit breaker exception or timeout calling {}: {}", targetRail, ex.getMessage());
@@ -69,21 +71,21 @@ public class PaymentOrchestratorService {
         }
 
         long totalLatency = System.currentTimeMillis() - start;
-        order.setLatencyMs(totalLatency);
+        persistedOrder.setLatencyMs(totalLatency);
 
         // Record metrics in sliding window tracker
         slidingWindowTracker.recordCall(targetRail, railResult.isSuccess(), totalLatency);
 
         if (railResult.isSuccess()) {
-            order.setStatus(PaymentStatus.SUCCESS);
-            ledgerService.recordSuccessfulPayment(order);
-            log.info("Payment {} SUCCEEDED on rail {} in {}ms", order.getId(), targetRail, totalLatency);
+            persistedOrder.setStatus(PaymentStatus.SUCCESS);
+            ledgerService.recordSuccessfulPayment(persistedOrder);
+            log.info("Payment {} SUCCEEDED on rail {} in {}ms", persistedOrder.getId(), targetRail, totalLatency);
         } else {
-            order.setStatus(PaymentStatus.FAILED);
-            order.setErrorReason(railResult.getErrorMessage());
-            log.warn("Payment {} FAILED on rail {}: {}", order.getId(), targetRail, railResult.getErrorMessage());
+            persistedOrder.setStatus(PaymentStatus.FAILED);
+            persistedOrder.setErrorReason(railResult.getErrorMessage());
+            log.warn("Payment {} FAILED on rail {}: {}", persistedOrder.getId(), targetRail, railResult.getErrorMessage());
         }
 
-        return orderRepository.save(order);
+        return orderRepository.save(persistedOrder);
     }
 }

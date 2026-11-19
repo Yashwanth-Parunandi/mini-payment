@@ -25,7 +25,11 @@ public class LedgerService {
     @Transactional
     public void recordSuccessfulPayment(PaymentOrder order) {
         LedgerAccount nodalEscrow = accountRepository.findByAccountType(AccountType.NODAL_ESCROW)
-                .orElseThrow(() -> new IllegalStateException("Nodal escrow account not configured"));
+                .orElseGet(() -> {
+                    LedgerAccount acc = new LedgerAccount("ESCROW_NODAL_INR_01", AccountType.NODAL_ESCROW, order.getCurrency());
+                    acc.setCurrentBalance(new BigDecimal("10000000.00"));
+                    return accountRepository.save(acc);
+                });
         
         LedgerAccount merchantPayable = accountRepository.findByAccountType(AccountType.MERCHANT_PAYABLE)
                 .orElseGet(() -> {
