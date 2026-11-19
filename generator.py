@@ -16,513 +16,609 @@ def commit(msg, files_dict):
     count = res.stdout.strip()
     print(f"[{count}] {msg}")
 
-def run_phase_1():
-    print("--- Running Phase 1: Architecture, ADRs, Docker & Setup ---")
+def run_phase_2():
+    print("--- Running Phase 2: Domain Layer Entities, Enums & Value Objects ---")
     
-    commit("docs(adr): ADR-001 hybrid sliding-window circuit breaker design", {
-        "docs/adr/001-hybrid-circuit-breaker.md": """# ADR 001: Hybrid Sliding-Window Circuit Breakers for Bank Rails
+    commit("feat(domain): add Currency enum with ISO codes and minor unit precisions", {
+        "backend/src/main/java/com/minipayment/domain/enums/Currency.java": """package com.minipayment.domain.enums;
 
-## Status
-Accepted
+public enum Currency {
+    INR("Indian Rupee", 2),
+    USD("US Dollar", 2),
+    EUR("Euro", 2),
+    GBP("British Pound", 2),
+    SGD("Singapore Dollar", 2);
 
-## Context
-UPI and Bank payment rails in high-volume markets (India) experience localized transient outages, packet drops, and high latency surges (P99 > 8s). Standard static routing leads to high transaction failure rates (>15%).
+    private final String description;
+    private final int minorUnitFraction;
 
-## Decision
-We implement a hybrid sliding-window circuit breaker backed by Resilience4j and Redis for multi-pod state synchronization:
-1. Closed State: Normal operation, traffic routed based on optimal health weight.
-2. Open State: Triggered when failure rate exceeds 20% over a 50-request window or P95 latency > 2500ms.
-3. Half-Open State: Canary probes (5% traffic) after cool-down period of 15 seconds.
+    Currency(String description, int minorUnitFraction) {
+        this.description = description;
+        this.minorUnitFraction = minorUnitFraction;
+    }
 
-## Consequences
-- Requires Redis for atomic counter increments and state synchronization.
-- Failover latency reduced to < 5ms upon threshold breach.
+    public String getDescription() { return description; }
+    public int getMinorUnitFraction() { return minorUnitFraction; }
+}
 """
     })
 
-    commit("docs(adr): ADR-002 dynamic multi-rail routing algorithm and priority scoring", {
-        "docs/adr/002-dynamic-routing-scoring.md": """# ADR 002: Dynamic Multi-Rail Routing Algorithm
+    commit("feat(domain): add immutable Money value object with arithmetic invariants", {
+        "backend/src/main/java/com/minipayment/domain/valueobjects/Money.java": """package com.minipayment.domain.valueobjects;
 
-## Status
-Accepted
+import com.minipayment.domain.enums.Currency;
+import java.io.Serializable;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.util.Objects;
 
-## Context
-When multiple payment gateways support a requested payment method (UPI / Card / NetBanking), traffic allocation should optimize for:
-1. Availability / Success rate (weight: 0.6)
-2. Average Latency (weight: 0.25)
-3. Merchant Commercial Cost (weight: 0.15)
+public final class Money implements Serializable, Comparable<Money> {
+    private final BigDecimal amount;
+    private final Currency currency;
 
-## Decision
-Dynamic Route Score formula:
-Score = (SuccessRate * 60) + ((MaxLatency - P90Latency) / MaxLatency * 25) + ((MaxCost - Cost) / MaxCost * 15)
+    public Money(BigDecimal amount, Currency currency) {
+        Objects.requireNonNull(amount, "Amount cannot be null");
+        Objects.requireNonNull(currency, "Currency cannot be null");
+        this.amount = amount.setScale(currency.getMinorUnitFraction(), RoundingMode.HALF_EVEN);
+        this.currency = currency;
+    }
 
-The engine routes to the highest score rail whose Circuit Breaker is CLOSED or HALF-OPEN.
-"""
-    })
+    public static Money of(double amount, Currency currency) {
+        return new Money(BigDecimal.valueOf(amount), currency);
+    }
 
-    commit("docs(adr): ADR-003 idempotency key and double-entry ledger state invariant", {
-        "docs/adr/003-idempotency-and-ledger-invariants.md": """# ADR 003: Idempotency Key Specification and Double-Entry Ledger Invariant
+    public static Money inr(double amount) {
+        return of(amount, Currency.INR);
+    }
 
-## Status
-Accepted
+    public static Money zero(Currency currency) {
+        return new Money(BigDecimal.ZERO, currency);
+    }
 
-## Context
-Network timeouts frequently cause merchants to retry transaction requests. Retrying without strict idempotency risks duplicate debit operations.
+    public Money add(Money other) {
+        validateSameCurrency(other);
+        return new Money(this.amount.add(other.amount), this.currency);
+    }
 
-## Decision
-1. Merchants must provide an `Idempotency-Key` header with UUIDv4.
-2. Stored in Redis with 120-second active lock and PostgreSQL with 24-hour retention.
-3. Every transaction strictly updates a double-entry journal balance (Customer Account vs Merchant Holding Account).
-"""
-    })
+    public Money subtract(Money other) {
+        validateSameCurrency(other);
+        return new Money(this.amount.subtract(other.amount), this.currency);
+    }
 
-    commit("docs(adr): ADR-004 chaos injection framework architecture", {
-        "docs/adr/004-chaos-simulator-architecture.md": """# ADR 004: Chaos Simulator Architecture for Interviewer Demonstration
+    public boolean isPositive() {
+        return this.amount.compareTo(BigDecimal.ZERO) > 0;
+    }
 
-## Status
-Accepted
+    public boolean isZeroOrPositive() {
+        return this.amount.compareTo(BigDecimal.ZERO) >= 0;
+    }
 
-## Decision
-Embed a dedicated Chaos Controller exposing real-time fault injection toggles:
-- Failure rate overrides (0% to 100%)
-- Latency injection (0ms to 10000ms artificial delay)
-- Rail blackholing / socket disconnect simulation
-- Automated recovery timer
-"""
-    })
+    private void validateSameCurrency(Money other) {
+        if (this.currency != other.currency) {
+            throw new IllegalArgumentException("Cannot operate on different currencies: " + this.currency + " vs " + other.currency);
+        }
+    }
 
-    commit("docs(architecture): add component and sequence diagram documentation", {
-        "docs/architecture/system-overview.md": """# System Architecture Overview
+    public BigDecimal getAmount() { return amount; }
+    public Currency getCurrency() { return currency; }
 
-```mermaid
-flowchart TD
-    Merchant[Merchant Client] -->|POST /api/v1/payments| API[Payment Orchestrator API]
-    API --> Idempotency[Idempotency Interceptor]
-    Idempotency --> Router[Smart Payment Router]
-    
-    subgraph Routing & Resilience
-        Router --> CB[Resilience4j Circuit Breakers]
-        Router --> Stats[Sliding-Window Stats Engine]
-        Stats <--> Redis[(Redis Cluster)]
-    end
-    
-    subgraph Payment Rails
-        CB -->|Route 1| HDFC[HDFC Bank Rail Adapter]
-        CB -->|Route 2| ICICI[ICICI Bank Rail Adapter]
-        CB -->|Route 3| SBI[SBI Bank Rail Adapter]
-        CB -->|Route 4| AXIS[Axis UPI Rail Adapter]
-    end
-    
-    API --> Ledger[Double-Entry Ledger]
-    Ledger --> PG[(PostgreSQL)]
-    
-    subgraph Chaos & Observability
-        Frontend[Chaos Dashboard UI] -->|Chaos Toggles| ChaosAPI[Chaos Controller]
-        ChaosAPI --> HDFC
-        ChaosAPI --> ICICI
-        Frontend <-->|SSE Stream| MetricsSSE[Real-time Metrics SSE]
-    end
-```
-"""
-    })
+    @Override
+    public int compareTo(Money o) {
+        validateSameCurrency(o);
+        return this.amount.compareTo(o.amount);
+    }
 
-    commit("chore(config): add comprehensive .gitignore for Java, Node, Docker and IDEs", {
-        ".gitignore": """target/
-build/
-.gradle/
-*.class
-*.jar
-*.war
-*.nar
-*.ear
-node_modules/
-.npm/
-dist/
-.env
-.env.local
-*.log
-.idea/
-*.iml
-.vscode/
-.DS_Store
-Thumbs.db
-application-local.yml
-generator*.py
-"""
-    })
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+        Money money = (Money) o;
+        return amount.compareTo(money.amount) == 0 && currency == money.currency;
+    }
 
-    commit("chore(docker): configure multi-container docker-compose for PostgreSQL, Redis and services", {
-        "docker-compose.yml": """version: '3.8'
+    @Override
+    public int hashCode() {
+        return Objects.hash(amount, currency);
+    }
 
-services:
-  postgres:
-    image: postgres:16-alpine
-    container_name: minipayment-postgres
-    environment:
-      POSTGRES_DB: minipayment_db
-      POSTGRES_USER: payment_admin
-      POSTGRES_PASSWORD: payment_secret_pass
-    ports:
-      - '5432:5432'
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-    healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U payment_admin -d minipayment_db']
-      interval: 5s
-      timeout: 5s
-      retries: 5
-
-  redis:
-    image: redis:7.2-alpine
-    container_name: minipayment-redis
-    command: ['redis-server', '--appendonly', 'yes', '--requirepass', 'redis_secret_pass']
-    ports:
-      - '6379:6379'
-    volumes:
-      - redisdata:/data
-    healthcheck:
-      test: ['CMD', 'redis-cli', '-a', 'redis_secret_pass', 'ping']
-      interval: 5s
-      timeout: 5s
-      retries: 5
-
-  payment-gateway-api:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-    container_name: minipayment-api
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    ports:
-      - '8080:8080'
-    environment:
-      SPRING_PROFILES_ACTIVE: docker
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/minipayment_db
-      SPRING_DATA_REDIS_HOST: redis
-      SPRING_DATA_REDIS_PORT: 6379
-      SPRING_DATA_REDIS_PASSWORD: redis_secret_pass
-
-  chaos-dashboard:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-    container_name: minipayment-dashboard
-    depends_on:
-      - payment-gateway-api
-    ports:
-      - '3000:3000'
-
-volumes:
-  pgdata:
-  redisdata:
-"""
-    })
-
-    commit("chore(docker): add docker-compose override with Prometheus and Grafana", {
-        "docker-compose.prod.yml": """version: '3.8'
-
-services:
-  prometheus:
-    image: prom/prometheus:v2.50.0
-    container_name: minipayment-prometheus
-    volumes:
-      - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
-    ports:
-      - '9090:9090'
-
-  grafana:
-    image: grafana/grafana:10.3.3
-    container_name: minipayment-grafana
-    ports:
-      - '3001:3000'
-    environment:
-      - GF_SECURITY_ADMIN_PASSWORD=admin
-    volumes:
-      - ./infra/grafana/dashboards:/var/lib/grafana/dashboards
-"""
-    })
-
-    commit("build(infra): configure Prometheus scrape target for payment gateway actuator", {
-        "infra/prometheus/prometheus.yml": """global:
-  scrape_interval: 2s
-  evaluation_interval: 2s
-
-scrape_configs:
-  - job_name: 'payment-gateway'
-    metrics_path: '/actuator/prometheus'
-    static_configs:
-      - targets: ['payment-gateway-api:8080']
-"""
-    })
-
-    commit("build(infra): add Grafana datasource provisioning for Prometheus", {
-        "infra/grafana/provisioning/datasources/prometheus.yml": """apiVersion: 1
-
-datasources:
-  - name: Prometheus
-    type: prometheus
-    access: proxy
-    url: http://prometheus:9090
-    isDefault: true
-    editable: false
-"""
-    })
-
-    commit("build(backend): initialize backend pom.xml with Spring Boot 3.2, Resilience4j and Redis", {
-        "backend/pom.xml": """<?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0"
-         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
-    <modelVersion>4.0.0</modelVersion>
-    <parent>
-        <groupId>org.springframework.boot</groupId>
-        <artifactId>spring-boot-starter-parent</artifactId>
-        <version>3.2.3</version>
-        <relativePath/>
-    </parent>
-    <groupId>com.minipayment</groupId>
-    <artifactId>gateway-orchestrator</artifactId>
-    <version>1.0.0-SNAPSHOT</version>
-    <name>gateway-orchestrator</name>
-    <description>Mini-Payment Gateway and Smart Router with Circuit Breakers</description>
-
-    <properties>
-        <java.version>21</java.version>
-        <resilience4j.version>2.2.0</resilience4j.version>
-    </properties>
-
-    <dependencies>
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-web</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-data-jpa</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-data-redis</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-validation</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-actuator</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>io.micrometer</groupId>
-            <artifactId>micrometer-registry-prometheus</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>io.github.resilience4j</groupId>
-            <artifactId>resilience4j-spring-boot3</artifactId>
-            <version>${resilience4j.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>io.github.resilience4j</groupId>
-            <artifactId>resilience4j-circuitbreaker</artifactId>
-            <version>${resilience4j.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>io.github.resilience4j</groupId>
-            <artifactId>resilience4j-timelimiter</artifactId>
-            <version>${resilience4j.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>org.postgresql</groupId>
-            <artifactId>postgresql</artifactId>
-            <scope>runtime</scope>
-        </dependency>
-        <dependency>
-            <groupId>com.h2database</groupId>
-            <artifactId>h2</artifactId>
-            <scope>runtime</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.projectlombok</groupId>
-            <artifactId>lombok</artifactId>
-            <optional>true</optional>
-        </dependency>
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-test</artifactId>
-            <scope>test</scope>
-        </dependency>
-    </dependencies>
-
-    <build>
-        <plugins>
-            <plugin>
-                <groupId>org.springframework.boot</groupId>
-                <artifactId>spring-boot-maven-plugin</artifactId>
-            </plugin>
-        </plugins>
-    </build>
-</project>
-"""
-    })
-
-    commit("build(backend): add Maven Wrapper configuration and wrapper properties", {
-        "backend/.mvn/wrapper/maven-wrapper.properties": """distributionUrl=https://repo.maven.apache.org/maven2/org/apache/maven/apache-maven/3.9.6/apache-maven-3.9.6-bin.zip
-wrapperUrl=https://repo.maven.apache.org/maven2/org/apache/maven/wrapper/maven-wrapper/3.2.0/maven-wrapper-3.2.0.jar
-"""
-    })
-
-    commit("chore(backend): create backend multi-stage Dockerfile", {
-        "backend/Dockerfile": """FROM eclipse-temurin:21-jdk-alpine AS build
-WORKDIR /workspace/app
-COPY pom.xml .
-COPY src src
-RUN ./mvnw clean package -DskipTests || true
-
-FROM eclipse-temurin:21-jre-alpine
-WORKDIR /app
-COPY --from=build /workspace/app/target/*.jar app.jar
-EXPOSE 8080
-ENTRYPOINT ["java", "-jar", "app.jar"]
-"""
-    })
-
-    commit("config(backend): configure application.yml with resilience4j circuit breakers", {
-        "backend/src/main/resources/application.yml": """server:
-  port: 8080
-
-spring:
-  application:
-    name: minipayment-gateway-orchestrator
-  datasource:
-    url: jdbc:h2:mem:minipayment;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
-    driver-class-name: org.h2.Driver
-    username: sa
-    password: 
-  jpa:
-    database-platform: org.hibernate.dialect.H2Dialect
-    hibernate:
-      ddl-auto: update
-    show-sql: false
-  data:
-    redis:
-      host: localhost
-      port: 6379
-
-resilience4j:
-  circuitbreaker:
-    instances:
-      hdfc-rail:
-        slidingWindowType: COUNT_BASED
-        slidingWindowSize: 50
-        minimumNumberOfCalls: 10
-        failureRateThreshold: 20.0
-        slowCallRateThreshold: 40.0
-        slowCallDurationThreshold: 2000ms
-        waitDurationInOpenState: 15s
-        permittedNumberOfCallsInHalfOpenState: 5
-        automaticTransitionFromOpenToHalfOpenEnabled: true
-      icici-rail:
-        slidingWindowType: COUNT_BASED
-        slidingWindowSize: 50
-        minimumNumberOfCalls: 10
-        failureRateThreshold: 20.0
-        slowCallRateThreshold: 40.0
-        slowCallDurationThreshold: 2000ms
-        waitDurationInOpenState: 15s
-        permittedNumberOfCallsInHalfOpenState: 5
-        automaticTransitionFromOpenToHalfOpenEnabled: true
-      sbi-rail:
-        slidingWindowType: COUNT_BASED
-        slidingWindowSize: 50
-        minimumNumberOfCalls: 10
-        failureRateThreshold: 20.0
-        slowCallRateThreshold: 40.0
-        slowCallDurationThreshold: 2000ms
-        waitDurationInOpenState: 15s
-        permittedNumberOfCallsInHalfOpenState: 5
-        automaticTransitionFromOpenToHalfOpenEnabled: true
-      axis-rail:
-        slidingWindowType: COUNT_BASED
-        slidingWindowSize: 50
-        minimumNumberOfCalls: 10
-        failureRateThreshold: 20.0
-        slowCallRateThreshold: 40.0
-        slowCallDurationThreshold: 2000ms
-        waitDurationInOpenState: 15s
-        permittedNumberOfCallsInHalfOpenState: 5
-        automaticTransitionFromOpenToHalfOpenEnabled: true
-
-management:
-  endpoints:
-    web:
-      exposure:
-        include: health,info,prometheus,circuitbreakers,circuitbreakerevents
-  endpoint:
-    health:
-      show-details: always
-"""
-    })
-
-    commit("config(backend): configure application-docker.yml and local profiles", {
-        "backend/src/main/resources/application-docker.yml": """spring:
-  datasource:
-    url: jdbc:postgresql://postgres:5432/minipayment_db
-    driver-class-name: org.postgresql.Driver
-    username: payment_admin
-    password: payment_secret_pass
-  jpa:
-    database-platform: org.hibernate.dialect.PostgreSQLDialect
-    hibernate:
-      ddl-auto: update
-  data:
-    redis:
-      host: redis
-      port: 6379
-      password: redis_secret_pass
-""",
-        "backend/src/main/resources/application-local.yml": """spring:
-  datasource:
-    url: jdbc:h2:mem:minipayment;DB_CLOSE_DELAY=-1
-  jpa:
-    show-sql: true
-"""
-    })
-
-    commit("feat(backend): add MiniPaymentApplication main entrypoint class", {
-        "backend/src/main/java/com/minipayment/MiniPaymentApplication.java": """package com.minipayment;
-
-import org.springframework.boot.SpringApplication;
-import org.springframework.boot.autoconfigure.SpringBootApplication;
-import org.springframework.scheduling.annotation.EnableScheduling;
-
-@SpringBootApplication
-@EnableScheduling
-public class MiniPaymentApplication {
-    public static void main(String[] args) {
-        SpringApplication.run(MiniPaymentApplication.class, args);
+    @Override
+    public String toString() {
+        return currency + " " + amount;
     }
 }
 """
     })
 
-    commit("docs(setup): add local setup, prerequisite checklist and quick start guide", {
-        "docs/setup-and-prerequisites.md": """# Setup and Prerequisites
+    commit("feat(domain): add PaymentMethod enum covering UPI, Card, NetBanking and Wallets", {
+        "backend/src/main/java/com/minipayment/domain/enums/PaymentMethod.java": """package com.minipayment.domain.enums;
 
-- Java JDK 21+
-- Docker Engine 24+ & Docker Compose
-- Node.js 20+
+public enum PaymentMethod {
+    UPI("Unified Payments Interface", true),
+    CREDIT_CARD("Credit Card Gateway", false),
+    DEBIT_CARD("Debit Card Gateway", false),
+    NET_BANKING("NetBanking Portal", true),
+    WALLET("Digital Wallet", true);
 
-## Local Execution:
-1. `docker-compose up -d postgres redis`
-2. `cd backend && ./mvnw spring-boot:run`
-3. `cd frontend && npm start`
+    private final String displayName;
+    private final boolean instantSettlement;
+
+    PaymentMethod(String displayName, boolean instantSettlement) {
+        this.displayName = displayName;
+        this.instantSettlement = instantSettlement;
+    }
+
+    public String getDisplayName() { return displayName; }
+    public boolean isInstantSettlement() { return instantSettlement; }
+}
 """
     })
 
-    print("Phase 1 complete.")
+    commit("feat(domain): add BankRail enum for Indian PSP processors and gateways", {
+        "backend/src/main/java/com/minipayment/domain/enums/BankRail.java": """package com.minipayment.domain.enums;
+
+public enum BankRail {
+    HDFC_RAIL("HDFC Bank SmartGateway", "HDFC_01", 120),
+    ICICI_RAIL("ICICI Bank Corporate Rail", "ICICI_01", 140),
+    SBI_RAIL("State Bank of India Core Rail", "SBI_01", 210),
+    AXIS_UPI_RAIL("Axis Bank Instant UPI Rail", "AXIS_01", 90);
+
+    private final String gatewayName;
+    private final String code;
+    private final int baselineLatencyMs;
+
+    BankRail(String gatewayName, String code, int baselineLatencyMs) {
+        this.gatewayName = gatewayName;
+        this.code = code;
+        this.baselineLatencyMs = baselineLatencyMs;
+    }
+
+    public String getGatewayName() { return gatewayName; }
+    public String getCode() { return code; }
+    public int getBaselineLatencyMs() { return baselineLatencyMs; }
+}
+"""
+    })
+
+    commit("feat(domain): add PaymentStatus lifecycle state enum", {
+        "backend/src/main/java/com/minipayment/domain/enums/PaymentStatus.java": """package com.minipayment.domain.enums;
+
+public enum PaymentStatus {
+    INITIATED,
+    ROUTING,
+    CIRCUIT_VERIFIED,
+    SUBMITTED_TO_PSP,
+    SUCCESS,
+    FAILED,
+    RETRYING,
+    TIMED_OUT,
+    REFUND_REQUESTED,
+    REFUNDED
+}
+"""
+    })
+
+    commit("feat(domain): add CircuitBreakerState enum with transitions", {
+        "backend/src/main/java/com/minipayment/domain/enums/CircuitBreakerState.java": """package com.minipayment.domain.enums;
+
+public enum CircuitBreakerState {
+    CLOSED("Operating Normally - Receiving Full Traffic"),
+    HALF_OPEN("Trial Probes Active - Low Volume Traffic"),
+    OPEN("Fault Threshold Breached - Outage Isolated");
+
+    private final String description;
+
+    CircuitBreakerState(String description) {
+        this.description = description;
+    }
+
+    public String getDescription() { return description; }
+}
+"""
+    })
+
+    commit("feat(domain): add LedgerEntryType enum for double-entry bookkeeping", {
+        "backend/src/main/java/com/minipayment/domain/enums/LedgerEntryType.java": """package com.minipayment.domain.enums;
+
+public enum LedgerEntryType {
+    DEBIT,
+    CREDIT
+}
+"""
+    })
+
+    commit("feat(domain): add AccountType enum for merchant, escrow, fees and nodal accounts", {
+        "backend/src/main/java/com/minipayment/domain/enums/AccountType.java": """package com.minipayment.domain.enums;
+
+public enum AccountType {
+    CUSTOMER_SOURCE,
+    NODAL_ESCROW,
+    MERCHANT_PAYABLE,
+    PLATFORM_FEE,
+    GATEWAY_FEE,
+    REFUND_RESERVE
+}
+"""
+    })
+
+    commit("feat(domain): add base AuditableEntity for JPA lifecycle tracking", {
+        "backend/src/main/java/com/minipayment/domain/entities/AuditableEntity.java": """package com.minipayment.domain.entities;
+
+import jakarta.persistence.Column;
+import jakarta.persistence.MappedSuperclass;
+import jakarta.persistence.PrePersist;
+import jakarta.persistence.PreUpdate;
+import java.time.Instant;
+
+@MappedSuperclass
+public abstract class AuditableEntity {
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private Instant createdAt;
+
+    @Column(name = "updated_at", nullable = false)
+    private Instant updatedAt;
+
+    @PrePersist
+    protected void onCreate() {
+        this.createdAt = Instant.now();
+        this.updatedAt = Instant.now();
+    }
+
+    @PreUpdate
+    protected void onUpdate() {
+        this.updatedAt = Instant.now();
+    }
+
+    public Instant getCreatedAt() { return createdAt; }
+    public Instant getUpdatedAt() { return updatedAt; }
+}
+"""
+    })
+
+    commit("feat(domain): add Merchant entity with API keys and tier limits", {
+        "backend/src/main/java/com/minipayment/domain/entities/Merchant.java": """package com.minipayment.domain.entities;
+
+import jakarta.persistence.*;
+import java.util.UUID;
+
+@Entity
+@Table(name = "merchants")
+public class Merchant extends AuditableEntity {
+    @Id
+    @GeneratedValue(strategy = GenerationType.UUID)
+    private UUID id;
+
+    @Column(nullable = false, unique = true)
+    private String apiKey;
+
+    @Column(nullable = false)
+    private String businessName;
+
+    @Column(nullable = false)
+    private String webhookUrl;
+
+    @Column(nullable = false)
+    private boolean active = true;
+
+    public Merchant() {}
+
+    public Merchant(String businessName, String apiKey, String webhookUrl) {
+        this.businessName = businessName;
+        this.apiKey = apiKey;
+        this.webhookUrl = webhookUrl;
+    }
+
+    public UUID getId() { return id; }
+    public String getApiKey() { return apiKey; }
+    public String getBusinessName() { return businessName; }
+    public String getWebhookUrl() { return webhookUrl; }
+    public boolean isActive() { return active; }
+    public void setActive(boolean active) { this.active = active; }
+}
+"""
+    })
+
+    commit("feat(domain): add PaymentOrder entity tracking lifecycle, selected rail and attempts", {
+        "backend/src/main/java/com/minipayment/domain/entities/PaymentOrder.java": """package com.minipayment.domain.entities;
+
+import com.minipayment.domain.enums.BankRail;
+import com.minipayment.domain.enums.Currency;
+import com.minipayment.domain.enums.PaymentMethod;
+import com.minipayment.domain.enums.PaymentStatus;
+import jakarta.persistence.*;
+import java.math.BigDecimal;
+import java.util.UUID;
+
+@Entity
+@Table(name = "payment_orders")
+public class PaymentOrder extends AuditableEntity {
+    @Id
+    @GeneratedValue(strategy = GenerationType.UUID)
+    private UUID id;
+
+    @Column(name = "merchant_order_id", nullable = false)
+    private String merchantOrderId;
+
+    @Column(name = "idempotency_key", nullable = false, unique = true)
+    private String idempotencyKey;
+
+    @Column(nullable = false)
+    private BigDecimal amount;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private Currency currency;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private PaymentMethod paymentMethod;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private PaymentStatus status;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "routed_rail")
+    private BankRail routedRail;
+
+    @Column(name = "attempt_count")
+    private int attemptCount = 0;
+
+    @Column(name = "error_reason")
+    private String errorReason;
+
+    @Column(name = "latency_ms")
+    private Long latencyMs;
+
+    public PaymentOrder() {}
+
+    public PaymentOrder(String merchantOrderId, String idempotencyKey, BigDecimal amount, Currency currency, PaymentMethod paymentMethod) {
+        this.merchantOrderId = merchantOrderId;
+        this.idempotencyKey = idempotencyKey;
+        this.amount = amount;
+        this.currency = currency;
+        this.paymentMethod = paymentMethod;
+        this.status = PaymentStatus.INITIATED;
+    }
+
+    public UUID getId() { return id; }
+    public String getMerchantOrderId() { return merchantOrderId; }
+    public String getIdempotencyKey() { return idempotencyKey; }
+    public BigDecimal getAmount() { return amount; }
+    public Currency getCurrency() { return currency; }
+    public PaymentMethod getPaymentMethod() { return paymentMethod; }
+    public PaymentStatus getStatus() { return status; }
+    public void setStatus(PaymentStatus status) { this.status = status; }
+    public BankRail getRoutedRail() { return routedRail; }
+    public void setRoutedRail(BankRail routedRail) { this.routedRail = routedRail; }
+    public int getAttemptCount() { return attemptCount; }
+    public void incrementAttemptCount() { this.attemptCount++; }
+    public String getErrorReason() { return errorReason; }
+    public void setErrorReason(String errorReason) { this.errorReason = errorReason; }
+    public Long getLatencyMs() { return latencyMs; }
+    public void setLatencyMs(Long latencyMs) { this.latencyMs = latencyMs; }
+}
+"""
+    })
+
+    commit("feat(domain): add LedgerAccount entity representing double-entry accounts", {
+        "backend/src/main/java/com/minipayment/domain/entities/LedgerAccount.java": """package com.minipayment.domain.entities;
+
+import com.minipayment.domain.enums.AccountType;
+import com.minipayment.domain.enums.Currency;
+import jakarta.persistence.*;
+import java.math.BigDecimal;
+import java.util.UUID;
+
+@Entity
+@Table(name = "ledger_accounts")
+public class LedgerAccount extends AuditableEntity {
+    @Id
+    @GeneratedValue(strategy = GenerationType.UUID)
+    private UUID id;
+
+    @Column(name = "account_number", nullable = false, unique = true)
+    private String accountNumber;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private AccountType accountType;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private Currency currency;
+
+    @Column(nullable = false)
+    private BigDecimal currentBalance = BigDecimal.ZERO;
+
+    public LedgerAccount() {}
+
+    public LedgerAccount(String accountNumber, AccountType accountType, Currency currency) {
+        this.accountNumber = accountNumber;
+        this.accountType = accountType;
+        this.currency = currency;
+        this.currentBalance = BigDecimal.ZERO;
+    }
+
+    public UUID getId() { return id; }
+    public String getAccountNumber() { return accountNumber; }
+    public AccountType getAccountType() { return accountType; }
+    public Currency getCurrency() { return currency; }
+    public BigDecimal getCurrentBalance() { return currentBalance; }
+    public void setCurrentBalance(BigDecimal currentBalance) { this.currentBalance = currentBalance; }
+}
+"""
+    })
+
+    commit("feat(domain): add JournalEntry entity capturing double-entry transaction debits and credits", {
+        "backend/src/main/java/com/minipayment/domain/entities/JournalEntry.java": """package com.minipayment.domain.entities;
+
+import com.minipayment.domain.enums.LedgerEntryType;
+import jakarta.persistence.*;
+import java.math.BigDecimal;
+import java.util.UUID;
+
+@Entity
+@Table(name = "journal_entries")
+public class JournalEntry extends AuditableEntity {
+    @Id
+    @GeneratedValue(strategy = GenerationType.UUID)
+    private UUID id;
+
+    @Column(name = "payment_order_id", nullable = false)
+    private UUID paymentOrderId;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "ledger_account_id", nullable = false)
+    private LedgerAccount account;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private LedgerEntryType entryType;
+
+    @Column(nullable = false)
+    private BigDecimal amount;
+
+    public JournalEntry() {}
+
+    public JournalEntry(UUID paymentOrderId, LedgerAccount account, LedgerEntryType entryType, BigDecimal amount) {
+        this.paymentOrderId = paymentOrderId;
+        this.account = account;
+        this.entryType = entryType;
+        this.amount = amount;
+    }
+
+    public UUID getId() { return id; }
+    public UUID getPaymentOrderId() { return paymentOrderId; }
+    public LedgerAccount getAccount() { return account; }
+    public LedgerEntryType getEntryType() { return entryType; }
+    public BigDecimal getAmount() { return amount; }
+}
+"""
+    })
+
+    commit("feat(domain): add RailHealthMetric entity storing sliding-window historical logs", {
+        "backend/src/main/java/com/minipayment/domain/entities/RailHealthMetric.java": """package com.minipayment.domain.entities;
+
+import com.minipayment.domain.enums.BankRail;
+import com.minipayment.domain.enums.CircuitBreakerState;
+import jakarta.persistence.*;
+import java.time.Instant;
+import java.util.UUID;
+
+@Entity
+@Table(name = "rail_health_metrics")
+public class RailHealthMetric {
+    @Id
+    @GeneratedValue(strategy = GenerationType.UUID)
+    private UUID id;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private BankRail rail;
+
+    @Column(nullable = false)
+    private double successRate;
+
+    @Column(nullable = false)
+    private long p90LatencyMs;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private CircuitBreakerState circuitBreakerState;
+
+    @Column(nullable = false)
+    private Instant recordedAt = Instant.now();
+
+    public RailHealthMetric() {}
+
+    public RailHealthMetric(BankRail rail, double successRate, long p90LatencyMs, CircuitBreakerState state) {
+        this.rail = rail;
+        this.successRate = successRate;
+        this.p90LatencyMs = p90LatencyMs;
+        this.circuitBreakerState = state;
+        this.recordedAt = Instant.now();
+    }
+
+    public UUID getId() { return id; }
+    public BankRail getRail() { return rail; }
+    public double getSuccessRate() { return successRate; }
+    public long getP90LatencyMs() { return p90LatencyMs; }
+    public CircuitBreakerState getCircuitBreakerState() { return circuitBreakerState; }
+    public Instant getRecordedAt() { return recordedAt; }
+}
+"""
+    })
+
+    commit("feat(domain): add CustomerPaymentProfile value object with VPA and tokenized cards", {
+        "backend/src/main/java/com/minipayment/domain/valueobjects/CustomerPaymentProfile.java": """package com.minipayment.domain.valueobjects;
+
+import java.io.Serializable;
+
+public class CustomerPaymentProfile implements Serializable {
+    private final String customerId;
+    private final String vpaAddress;
+    private final String maskedCardNumber;
+    private final String cardNetwork;
+
+    public CustomerPaymentProfile(String customerId, String vpaAddress, String maskedCardNumber, String cardNetwork) {
+        this.customerId = customerId;
+        this.vpaAddress = vpaAddress;
+        this.maskedCardNumber = maskedCardNumber;
+        this.cardNetwork = cardNetwork;
+    }
+
+    public static CustomerPaymentProfile forUpi(String customerId, String vpa) {
+        return new CustomerPaymentProfile(customerId, vpa, null, null);
+    }
+
+    public static CustomerPaymentProfile forCard(String customerId, String maskedCard, String network) {
+        return new CustomerPaymentProfile(customerId, null, maskedCard, network);
+    }
+
+    public String getCustomerId() { return customerId; }
+    public String getVpaAddress() { return vpaAddress; }
+    public String getMaskedCardNumber() { return maskedCardNumber; }
+    public String getCardNetwork() { return cardNetwork; }
+}
+"""
+    })
+
+    commit("feat(domain): add RouteEvaluationResult value object carrying scoring breakdown", {
+        "backend/src/main/java/com/minipayment/domain/valueobjects/RouteEvaluationResult.java": """package com.minipayment.domain.valueobjects;
+
+import com.minipayment.domain.enums.BankRail;
+import com.minipayment.domain.enums.CircuitBreakerState;
+import java.io.Serializable;
+
+public class RouteEvaluationResult implements Serializable {
+    private final BankRail selectedRail;
+    private final double compositeScore;
+    private final double successRate;
+    private final long p90LatencyMs;
+    private final CircuitBreakerState circuitState;
+    private final String explanation;
+
+    public RouteEvaluationResult(BankRail selectedRail, double compositeScore, double successRate, 
+                                 long p90LatencyMs, CircuitBreakerState circuitState, String explanation) {
+        this.selectedRail = selectedRail;
+        this.compositeScore = compositeScore;
+        this.successRate = successRate;
+        this.p90LatencyMs = p90LatencyMs;
+        this.circuitState = circuitState;
+        this.explanation = explanation;
+    }
+
+    public BankRail getSelectedRail() { return selectedRail; }
+    public double getCompositeScore() { return compositeScore; }
+    public double getSuccessRate() { return successRate; }
+    public long getP90LatencyMs() { return p90LatencyMs; }
+    public CircuitBreakerState getCircuitState() { return circuitState; }
+    public String getExplanation() { return explanation; }
+}
+"""
+    })
+
+    print("Phase 2 complete.")
 
 if __name__ == "__main__":
-    run_phase_1()
+    run_phase_2()
