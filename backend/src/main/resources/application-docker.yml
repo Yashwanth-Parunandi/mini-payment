@@ -1,0 +1,15 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://postgres:5432/minipayment_db
+    driver-class-name: org.postgresql.Driver
+    username: payment_admin
+    password: payment_secret_pass
+  jpa:
+    database-platform: org.hibernate.dialect.PostgreSQLDialect
+    hibernate:
+      ddl-auto: update
+  data:
+    redis:
+      host: redis
+      port: 6379
+      password: redis_secret_pass
