@@ -1,0 +1,66 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: minipayment-postgres
+    environment:
+      POSTGRES_DB: minipayment_db
+      POSTGRES_USER: payment_admin
+      POSTGRES_PASSWORD: payment_secret_pass
+    ports:
+      - '5432:5432'
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U payment_admin -d minipayment_db']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7.2-alpine
+    container_name: minipayment-redis
+    command: ['redis-server', '--appendonly', 'yes', '--requirepass', 'redis_secret_pass']
+    ports:
+      - '6379:6379'
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', '-a', 'redis_secret_pass', 'ping']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  payment-gateway-api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: minipayment-api
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - '8080:8080'
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/minipayment_db
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: 6379
+      SPRING_DATA_REDIS_PASSWORD: redis_secret_pass
+
+  chaos-dashboard:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: minipayment-dashboard
+    depends_on:
+      - payment-gateway-api
+    ports:
+      - '3000:3000'
+
+volumes:
+  pgdata:
+  redisdata:
