@@ -16,223 +16,338 @@ def commit(msg, files_dict):
     count = res.stdout.strip()
     print(f"[{count}] {msg}")
 
-def run_phase_8():
-    print("--- Running Phase 8: Chaos Injection Engine & Live Metrics Controller ---")
+def run_phase_9():
+    print("--- Running Phase 9: React Live Chaos Dashboard & Real-Time Metrics UI ---")
 
-    commit("feat(chaos): define ChaosInjectionCommand request model", {
-        "backend/src/main/java/com/minipayment/chaos/ChaosInjectionCommand.java": """package com.minipayment.chaos;
-
-import com.minipayment.domain.enums.BankRail;
-
-public class ChaosInjectionCommand {
-    private BankRail rail;
-    private boolean forcedOutage;
-    private int additionalLatencyMs;
-    private int failureRateOverridePercent;
-
-    public BankRail getRail() { return rail; }
-    public void setRail(BankRail rail) { this.rail = rail; }
-    public boolean isForcedOutage() { return forcedOutage; }
-    public void setForcedOutage(boolean forcedOutage) { this.forcedOutage = forcedOutage; }
-    public int getAdditionalLatencyMs() { return additionalLatencyMs; }
-    public void setAdditionalLatencyMs(int additionalLatencyMs) { this.additionalLatencyMs = additionalLatencyMs; }
-    public int getFailureRateOverridePercent() { return failureRateOverridePercent; }
-    public void setFailureRateOverridePercent(int failureRateOverridePercent) { this.failureRateOverridePercent = failureRateOverridePercent; }
+    commit("feat(frontend): initialize package.json for React dashboard with lucide-react and recharts", {
+        "frontend/package.json": """{
+  "name": "minipayment-chaos-dashboard",
+  "version": "1.0.0",
+  "private": true,
+  "dependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-scripts": "5.0.1",
+    "recharts": "^2.12.0",
+    "lucide-react": "^0.344.0"
+  },
+  "scripts": {
+    "start": "react-scripts start",
+    "build": "react-scripts build",
+    "test": "react-scripts test --env=jsdom"
+  },
+  "proxy": "http://localhost:8080"
 }
 """
     })
 
-    commit("feat(chaos): implement ChaosSimulatorService controlling simulated outage state across bank adapters", {
-        "backend/src/main/java/com/minipayment/chaos/ChaosSimulatorService.java": """package com.minipayment.chaos;
+    commit("feat(frontend): create Dockerfile and public index.html for dashboard", {
+        "frontend/Dockerfile": """FROM node:20-alpine AS build
+WORKDIR /app
+COPY package*.json ./
+RUN npm install
+COPY . .
+RUN npm run build
 
-import com.minipayment.domain.enums.BankRail;
-import com.minipayment.rail.BankRailAdapter;
-import com.minipayment.rail.BankRailRegistry;
-import com.minipayment.rail.BaseBankRailAdapter;
-import com.minipayment.resilience.CircuitBreakerRegistryBridge;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.stereotype.Service;
+FROM nginx:alpine
+COPY --from=build /app/build /usr/share/nginx/html
+EXPOSE 80
+CMD ["nginx", "-g", "daemon off;"]
+""",
+        "frontend/public/index.html": """<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Mini Payment - Smart Router & Circuit Breaker Dashboard</title>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" />
+  </head>
+  <body style="margin: 0; background-color: #0b0f19; font-family: 'Inter', sans-serif;">
+    <noscript>You need to enable JavaScript to run this app.</noscript>
+    <div id="root"></div>
+  </body>
+</html>
+"""
+    })
 
-import java.util.HashMap;
-import java.util.Map;
+    commit("feat(frontend): create App.css with dark-mode fintech styling and animations", {
+        "frontend/src/App.css": """:root {
+  --bg-main: #0b0f19;
+  --bg-card: #151d2f;
+  --border-color: #232f48;
+  --text-main: #f8fafc;
+  --text-muted: #94a3b8;
+  --color-green: #10b981;
+  --color-yellow: #f59e0b;
+  --color-red: #ef4444;
+  --color-blue: #3b82f6;
+}
 
-@Service
-public class ChaosSimulatorService {
-    private static final Logger log = LoggerFactory.getLogger(ChaosSimulatorService.class);
+body {
+  margin: 0;
+  padding: 0;
+  background-color: var(--bg-main);
+  color: var(--text-main);
+}
 
-    private final BankRailRegistry railRegistry;
-    private final CircuitBreakerRegistryBridge circuitBreakerBridge;
+.dashboard-container {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 24px;
+}
 
-    public ChaosSimulatorService(BankRailRegistry railRegistry, CircuitBreakerRegistryBridge circuitBreakerBridge) {
-        this.railRegistry = railRegistry;
-        this.circuitBreakerBridge = circuitBreakerBridge;
-    }
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: 16px;
+}
 
-    public void applyChaos(ChaosInjectionCommand cmd) {
-        BankRailAdapter adapter = railRegistry.getAdapter(cmd.getRail());
-        if (adapter instanceof BaseBankRailAdapter base) {
-            base.setForcedOutage(cmd.isForcedOutage());
-            base.setForcedLatencyMs(cmd.getAdditionalLatencyMs());
-            base.setFailureRateOverridePercent(cmd.getFailureRateOverridePercent());
+.rails-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 20px;
+  margin-bottom: 24px;
+}
 
-            if (cmd.isForcedOutage()) {
-                circuitBreakerBridge.transitionToOpen(cmd.getRail());
-                log.warn("CHAOS: Rail {} set to FORCED OUTAGE, Circuit Breaker forcefully tripped OPEN", cmd.getRail());
-            } else if (!cmd.isForcedOutage() && circuitBreakerBridge.getState(cmd.getRail()).name().equals("OPEN")) {
-                circuitBreakerBridge.transitionToClosed(cmd.getRail());
-                log.info("CHAOS: Rail {} restored, Circuit Breaker reset to CLOSED", cmd.getRail());
-            }
-        }
-    }
+.rail-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 20px;
+  transition: transform 0.2s, border-color 0.2s;
+}
 
-    public Map<String, Object> getChaosStatus() {
-        Map<String, Object> status = new HashMap<>();
-        for (BankRail rail : BankRail.values()) {
-            BankRailAdapter adapter = railRegistry.getAdapter(rail);
-            if (adapter instanceof BaseBankRailAdapter base) {
-                Map<String, Object> r = new HashMap<>();
-                r.put("forcedOutage", base.isForcedOutage());
-                r.put("forcedLatencyMs", base.getForcedLatencyMs());
-                r.put("failureRateOverridePercent", base.getFailureRateOverridePercent());
-                status.put(rail.name(), r);
-            }
-        }
-        return status;
-    }
+.rail-card:hover {
+  border-color: var(--color-blue);
+  transform: translateY(-2px);
+}
 
-    public void resetAllChaos() {
-        for (BankRail rail : BankRail.values()) {
-            BankRailAdapter adapter = railRegistry.getAdapter(rail);
-            if (adapter instanceof BaseBankRailAdapter base) {
-                base.setForcedOutage(false);
-                base.setForcedLatencyMs(0);
-                base.setFailureRateOverridePercent(-1);
-                circuitBreakerBridge.transitionToClosed(rail);
-            }
-        }
-        log.info("CHAOS: All rails reset to healthy state.");
-    }
+.badge-closed {
+  background: rgba(16, 185, 129, 0.2);
+  color: #34d399;
+  border: 1px solid rgba(16, 185, 129, 0.4);
+  padding: 4px 10px;
+  border-radius: 9999px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.badge-open {
+  background: rgba(239, 68, 68, 0.2);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  padding: 4px 10px;
+  border-radius: 9999px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.btn-chaos-outage {
+  background: #dc2626;
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.btn-chaos-outage:hover {
+  background: #b91c1c;
+}
+
+.btn-reset {
+  background: #059669;
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 600;
 }
 """
     })
 
-    commit("feat(api): create ChaosController exposing outage simulation and recovery endpoints", {
-        "backend/src/main/java/com/minipayment/controller/ChaosController.java": """package com.minipayment.controller;
+    commit("feat(frontend): implement React dashboard with real-time SSE stream, latency charts and chaos controls", {
+        "frontend/src/App.js": """import React, { useState, useEffect } from 'react';
+import './App.css';
 
-import com.minipayment.chaos.ChaosInjectionCommand;
-import com.minipayment.chaos.ChaosSimulatorService;
-import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
+const RAILS = [
+  { id: 'HDFC_RAIL', name: 'HDFC SmartGateway' },
+  { id: 'ICICI_RAIL', name: 'ICICI Corporate Rail' },
+  { id: 'SBI_RAIL', name: 'SBI National Core' },
+  { id: 'AXIS_UPI_RAIL', name: 'Axis Instant UPI' }
+];
 
-import java.util.Map;
+export default function App() {
+  const [metrics, setMetrics] = useState({});
+  const [trafficActive, setTrafficActive] = useState(false);
+  const [recentLogs, setRecentLogs] = useState([]);
 
-@RestController
-@RequestMapping("/api/v1/chaos")
-public class ChaosController {
-    private final ChaosSimulatorService chaosService;
+  useEffect(() => {
+    const eventSource = new EventSource('/api/v1/metrics/stream');
+    eventSource.addEventListener('metrics', (e) => {
+      try {
+        const data = JSON.parse(e.data);
+        const map = {};
+        data.forEach(item => { map[item.rail] = item; });
+        setMetrics(map);
+      } catch (err) {}
+    });
 
-    public ChaosController(ChaosSimulatorService chaosService) {
-        this.chaosService = chaosService;
-    }
+    return () => eventSource.close();
+  }, []);
 
-    @PostMapping("/inject")
-    public ResponseEntity<Map<String, Object>> injectChaos(@RequestBody ChaosInjectionCommand command) {
-        chaosService.applyChaos(command);
-        return ResponseEntity.ok(Map.of("message", "Chaos applied successfully", "status", chaosService.getChaosStatus()));
-    }
+  const triggerChaos = async (rail, isOutage) => {
+    await fetch('/api/v1/chaos/inject', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        rail,
+        forcedOutage: isOutage,
+        additionalLatencyMs: isOutage ? 4000 : 0,
+        failureRateOverridePercent: isOutage ? 100 : -1
+      })
+    });
+  };
 
-    @PostMapping("/reset")
-    public ResponseEntity<Map<String, Object>> resetAll() {
-        chaosService.resetAllChaos();
-        return ResponseEntity.ok(Map.of("message", "All chaos overrides reset", "status", chaosService.getChaosStatus()));
-    }
+  const resetAllChaos = async () => {
+    await fetch('/api/v1/chaos/reset', { method: 'POST' });
+  };
 
-    @GetMapping("/status")
-    public ResponseEntity<Map<String, Object>> getStatus() {
-        return ResponseEntity.ok(chaosService.getChaosStatus());
-    }
+  const simulateCheckout = async () => {
+    const res = await fetch('/api/v1/payments', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        merchantOrderId: 'ORD-' + Math.floor(Math.random() * 900000 + 100000),
+        amount: (Math.random() * 4900 + 100).toFixed(2),
+        currency: 'INR',
+        paymentMethod: 'UPI'
+      })
+    });
+    const data = await res.json();
+    setRecentLogs(prev => [data, ...prev.slice(0, 9)]);
+  };
+
+  return (
+    <div className="dashboard-container">
+      <div className="header">
+        <div>
+          <h1 style={{ margin: 0, fontSize: 24 }}>⚡ Mini Payment Gateway & Smart Router</h1>
+          <p style={{ margin: '4px 0 0', color: '#94a3b8', fontSize: 14 }}>
+            Real-time Circuit Breaker & Failover Orchestration Engine (Resilience4j + Redis)
+          </p>
+        </div>
+        <div style={{ display: 'flex', gap: 12 }}>
+          <button className="btn-reset" onClick={simulateCheckout}>⚡ Dispatch Payment</button>
+          <button className="btn-chaos-outage" onClick={resetAllChaos}>↺ Reset All Chaos</button>
+        </div>
+      </div>
+
+      <div className="rails-grid">
+        {RAILS.map(rail => {
+          const m = metrics[rail.id] || { successRate: 100, p90LatencyMs: 120, circuitState: 'CLOSED', sampleSize: 0 };
+          const isOpen = m.circuitState === 'OPEN';
+
+          return (
+            <div key={rail.id} className="rail-card">
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                <h3 style={{ margin: 0, fontSize: 16 }}>{rail.name}</h3>
+                <span className={isOpen ? 'badge-open' : 'badge-closed'}>
+                  {m.circuitState}
+                </span>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8, fontSize: 14 }}>
+                <span style={{ color: '#94a3b8' }}>Success Rate</span>
+                <span style={{ fontWeight: 600, color: m.successRate < 80 ? '#ef4444' : '#10b981' }}>
+                  {m.successRate ? m.successRate.toFixed(1) : 100}%
+                </span>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16, fontSize: 14 }}>
+                <span style={{ color: '#94a3b8' }}>P90 Latency</span>
+                <span style={{ fontWeight: 600 }}>{m.p90LatencyMs || 0} ms</span>
+              </div>
+
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button 
+                  className="btn-chaos-outage" 
+                  style={{ flex: 1, fontSize: 12, padding: '6px 8px' }}
+                  onClick={() => triggerChaos(rail.id, true)}>
+                  💥 Simulate Outage
+                </button>
+                <button 
+                  className="btn-reset" 
+                  style={{ flex: 1, fontSize: 12, padding: '6px 8px' }}
+                  onClick={() => triggerChaos(rail.id, false)}>
+                  ✓ Recover
+                </button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <div style={{ background: '#151d2f', borderRadius: 12, padding: 20, border: '1px solid #232f48' }}>
+        <h3 style={{ margin: '0 0 16px', fontSize: 16 }}>Live Payment Dispatches</h3>
+        <table style={{ width: '100%', textAlign: 'left', borderCollapse: 'collapse', fontSize: 14 }}>
+          <thead>
+            <tr style={{ color: '#94a3b8', borderBottom: '1px solid #232f48' }}>
+              <th style={{ padding: '8px 12px' }}>Order ID</th>
+              <th style={{ padding: '8px 12px' }}>Amount</th>
+              <th style={{ padding: '8px 12px' }}>Routed Rail</th>
+              <th style={{ padding: '8px 12px' }}>Latency</th>
+              <th style={{ padding: '8px 12px' }}>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {recentLogs.map((log, idx) => (
+              <tr key={idx} style={{ borderBottom: '1px solid #1e293b' }}>
+                <td style={{ padding: '8px 12px' }}>{log.merchantOrderId}</td>
+                <td style={{ padding: '8px 12px' }}>₹{log.amount}</td>
+                <td style={{ padding: '8px 12px', fontWeight: 600 }}>{log.routedRail}</td>
+                <td style={{ padding: '8px 12px' }}>{log.latencyMs} ms</td>
+                <td style={{ padding: '8px 12px', color: log.status === 'SUCCESS' ? '#10b981' : '#ef4444' }}>
+                  {log.status}
+                </td>
+              </tr>
+            ))}
+            {recentLogs.length === 0 && (
+              <tr>
+                <td colSpan={5} style={{ padding: '16px 12px', color: '#64748b', textAlign: 'center' }}>
+                  No transactions dispatched yet. Click "⚡ Dispatch Payment" above.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
 }
 """
     })
 
-    commit("feat(api): create MetricsController providing live SSE stream and snapshot metrics for frontend dashboard", {
-        "backend/src/main/java/com/minipayment/controller/MetricsController.java": """package com.minipayment.controller;
+    commit("feat(frontend): create React index.js bootstrap file", {
+        "frontend/src/index.js": """import React from 'react';
+import ReactDOM from 'react-dom/client';
+import App from './App';
 
-import com.minipayment.domain.enums.BankRail;
-import com.minipayment.resilience.CircuitBreakerRegistryBridge;
-import com.minipayment.resilience.RedisSlidingWindowTracker;
-import org.springframework.http.MediaType;
-import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
-import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
-
-import java.io.IOException;
-import java.util.*;
-import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
-
-@RestController
-@RequestMapping("/api/v1/metrics")
-public class MetricsController {
-    private final RedisSlidingWindowTracker windowTracker;
-    private final CircuitBreakerRegistryBridge cbBridge;
-    private final List<SseEmitter> emitters = new CopyOnWriteArrayList<>();
-
-    public MetricsController(RedisSlidingWindowTracker windowTracker, CircuitBreakerRegistryBridge cbBridge) {
-        this.windowTracker = windowTracker;
-        this.cbBridge = cbBridge;
-
-        Executors.newSingleThreadScheduledExecutor().scheduleAtFixedRate(this::broadcastMetrics, 1, 1, TimeUnit.SECONDS);
-    }
-
-    @GetMapping("/snapshot")
-    public ResponseEntity<List<Map<String, Object>>> getSnapshot() {
-        return ResponseEntity.ok(collectMetrics());
-    }
-
-    @GetMapping(value = "/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public SseEmitter streamMetrics() {
-        SseEmitter emitter = new SseEmitter(180_000L);
-        emitters.add(emitter);
-        emitter.onCompletion(() -> emitters.remove(emitter));
-        emitter.onTimeout(() -> emitters.remove(emitter));
-        return emitter;
-    }
-
-    private List<Map<String, Object>> collectMetrics() {
-        List<Map<String, Object>> list = new ArrayList<>();
-        for (BankRail rail : BankRail.values()) {
-            Map<String, Object> m = new HashMap<>();
-            m.put("rail", rail.name());
-            m.put("gatewayName", rail.getGatewayName());
-            m.put("successRate", windowTracker.getSuccessRate(rail));
-            m.put("p90LatencyMs", windowTracker.getP90LatencyMs(rail));
-            m.put("sampleSize", windowTracker.getSampleSize(rail));
-            m.put("circuitState", cbBridge.getState(rail).name());
-            list.add(m);
-        }
-        return list;
-    }
-
-    private void broadcastMetrics() {
-        List<Map<String, Object>> data = collectMetrics();
-        for (SseEmitter emitter : emitters) {
-            try {
-                emitter.send(SseEmitter.event().name("metrics").data(data));
-            } catch (IOException e) {
-                emitters.remove(emitter);
-            }
-        }
-    }
-}
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>
+);
 """
     })
 
-    print("Phase 8 complete.")
+    print("Phase 9 complete.")
 
 if __name__ == "__main__":
-    run_phase_8()
+    run_phase_9()
